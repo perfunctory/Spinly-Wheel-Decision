@@ -53,7 +53,10 @@ workflows:
           keychain initialize
           app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
           keychain add-certificates
-          xcode-project use-profiles
+          xcode-project use-profiles --warn-only
+          # Save Codemagic-generated export options for flutter build
+          mkdir -p "$CM_BUILD_DIR/ios"
+          cp "$FCI_EXPORT_DIR/export_options.plist" "$CM_BUILD_DIR/ios/ExportOptions.plist" 2>/dev/null || true
 
       - name: Build iOS IPA with Obfuscation
         script: |
@@ -66,14 +69,40 @@ workflows:
           echo "📦 Version: $VERSION"
           echo "🔢 Build: $BUILD"
 
-          # Build + sign with Codemagic-managed certificates
+          EXPORT_OPTIONS="$CM_BUILD_DIR/ios/ExportOptions.plist"
+          if [ ! -f "$EXPORT_OPTIONS" ]; then
+            echo "⚠️  ExportOptions.plist not found — generating manually"
+            cat > "$EXPORT_OPTIONS" << 'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <key>teamID</key>
+              <string>697X622429</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.spinlywheel.decisionmaker</key>
+                  <string>Lucky Wheel  Decision</string>
+              </dict>
+              <key>signingCertificate</key>
+              <string>Apple Distribution</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+          </dict>
+          </plist>
+          PLIST
+          fi
+
           flutter build ipa \
             --release \
             --obfuscate \
             --split-debug-info=build/ios/symbols \
             --build-name=$VERSION \
             --build-number=$BUILD \
-            --export-options-plist=$CM_BUILD_DIR/ios/ExportOptions.plist
+            --export-options-plist="$EXPORT_OPTIONS" \
+            --verbose
 
           echo "✅ Build + signing completed"
 
