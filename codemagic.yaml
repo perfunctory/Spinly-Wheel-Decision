@@ -1,6 +1,6 @@
 workflows:
   ios-build:
-    name: Juicy Sugar Bubble Pop iOS Build (Obfuscated)
+    name: Spinly Wheel Decision iOS Build (Obfuscated)
     max_build_duration: 120
     instance_type: mac_mini_m2
 
@@ -55,51 +55,37 @@ workflows:
           keychain add-certificates
           xcode-project use-profiles
 
-      - name: Build iOS IPA with Advanced Obfuscation
+      - name: Build iOS IPA with Obfuscation
         script: |
           echo "============================================"
           echo "🚀 Starting Build with Dart Obfuscation"
           echo "============================================"
 
-          # 读取版本信息
           VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
           BUILD=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f2 || echo "1")
-          
           echo "📦 Version: $VERSION"
           echo "🔢 Build: $BUILD"
 
-          # ==================== 核心混淆构建命令 ====================
+          # Build + sign with Codemagic-managed certificates
           flutter build ipa \
             --release \
             --obfuscate \
-            --split-debug-info=build/app/outputs/symbols \
+            --split-debug-info=build/ios/symbols \
             --build-name=$VERSION \
             --build-number=$BUILD \
-            --no-codesign \
-            --verbose
+            --export-options-plist=$CM_BUILD_DIR/ios/ExportOptions.plist
 
-          echo "✅ Flutter build completed with obfuscation"
+          echo "✅ Build + signing completed"
 
-          # 创建 artifacts 目录并复制 IPA
-          mkdir -p build/ios/ipa
-          cp build/ios/iphoneos/*.ipa build/ios/ipa/ || echo "⚠️  IPA copy warning"
-
-          # 保存 dSYMs（用于 Crash 符号化，非常重要）
+          # Collect dSYMs from the latest archive
           mkdir -p build/ios/dSYMs
-          if [ -d "$HOME/Library/Developer/Xcode/Archives" ]; then
-            LATEST_ARCHIVE=$(find "$HOME/Library/Developer/Xcode/Archives" -maxdepth 1 -name "*.xcarchive" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2)
-            if [ -n "$LATEST_ARCHIVE" ] && [ -d "$LATEST_ARCHIVE/dSYMs" ]; then
-              cp -r "$LATEST_ARCHIVE/dSYMs" build/ios/dSYMs/
-              echo "✅ dSYMs saved successfully"
-            fi
+          LATEST_ARCHIVE=$(ls -td "$HOME/Library/Developer/Xcode/Archives"/*.xcarchive 2>/dev/null | head -1)
+          if [ -n "$LATEST_ARCHIVE" ] && [ -d "$LATEST_ARCHIVE/dSYMs" ]; then
+            cp -r "$LATEST_ARCHIVE/dSYMs/"* build/ios/dSYMs/
+            echo "✅ dSYMs saved"
           fi
 
-          # 保存符号文件（供后续 Crash 分析使用）
-          mkdir -p build/ios/symbols
-          cp -r build/app/outputs/symbols/* build/ios/symbols/ 2>/dev/null || true
-          echo "✅ Debug symbols preserved for crash reporting"
-
-          echo "🎉 Build finished successfully!"
+          echo "🎉 Done!"
           echo "============================================"
 
     artifacts:
