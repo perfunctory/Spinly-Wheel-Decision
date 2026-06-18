@@ -1,0 +1,115 @@
+workflows:
+  ios-build:
+    name: Juicy Sugar Bubble Pop iOS Build (Obfuscated)
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: 'Su Dang Van'
+
+    environment:
+      groups:
+        - publishing
+
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.spinlywheel.decisionmaker
+
+      vars:
+        BUNDLE_ID: com.spinlywheel.decisionmaker
+        XCODE_WORKSPACE: Runner.xcworkspace
+        XCODE_SCHEME: Runner
+
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+
+    cache:
+      cache_paths:
+        - ~/.pub-cache
+        - $CM_BUILD_DIR/.dart_tool
+        - $FCI_BUILD_DIR/ios/Pods
+        - ~/Library/Caches/CocoaPods
+
+    scripts:
+      - name: Set Flutter version
+        script: flutter --version
+
+      - name: Clean and install Flutter dependencies
+        script: |
+          echo "=== Cleaning project ==="
+          flutter clean
+
+          echo "=== Installing dependencies ==="
+          flutter pub get
+
+      - name: Install iOS CocoaPods dependencies
+        script: |
+          cd ios
+          pod install --repo-update
+
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" --type IOS_APP_STORE --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build iOS IPA with Advanced Obfuscation
+        script: |
+          echo "============================================"
+          echo "🚀 Starting Build with Dart Obfuscation"
+          echo "============================================"
+
+          # 读取版本信息
+          VERSION=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f1)
+          BUILD=$(grep '^version:' pubspec.yaml | sed 's/version: //' | cut -d'+' -f2 || echo "1")
+          
+          echo "📦 Version: $VERSION"
+          echo "🔢 Build: $BUILD"
+
+          # ==================== 核心混淆构建命令 ====================
+          flutter build ipa \
+            --release \
+            --obfuscate \
+            --split-debug-info=build/app/outputs/symbols \
+            --build-name=$VERSION \
+            --build-number=$BUILD \
+            --no-codesign \
+            --verbose
+
+          echo "✅ Flutter build completed with obfuscation"
+
+          # 创建 artifacts 目录并复制 IPA
+          mkdir -p build/ios/ipa
+          cp build/ios/iphoneos/*.ipa build/ios/ipa/ || echo "⚠️  IPA copy warning"
+
+          # 保存 dSYMs（用于 Crash 符号化，非常重要）
+          mkdir -p build/ios/dSYMs
+          if [ -d "$HOME/Library/Developer/Xcode/Archives" ]; then
+            LATEST_ARCHIVE=$(find "$HOME/Library/Developer/Xcode/Archives" -maxdepth 1 -name "*.xcarchive" -printf "%T@ %p\n" 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2)
+            if [ -n "$LATEST_ARCHIVE" ] && [ -d "$LATEST_ARCHIVE/dSYMs" ]; then
+              cp -r "$LATEST_ARCHIVE/dSYMs" build/ios/dSYMs/
+              echo "✅ dSYMs saved successfully"
+            fi
+          fi
+
+          # 保存符号文件（供后续 Crash 分析使用）
+          mkdir -p build/ios/symbols
+          cp -r build/app/outputs/symbols/* build/ios/symbols/ 2>/dev/null || true
+          echo "✅ Debug symbols preserved for crash reporting"
+
+          echo "🎉 Build finished successfully!"
+          echo "============================================"
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/ios/dSYMs/**
+      - build/ios/symbols/**
+
+    # publishing:
+    #   app_store_connect:
+    #     api_key: $APP_STORE_CONNECT_PRIVATE_KEY
+    #     key_id: $APP_STORE_CONNECT_KEY_IDENTIFIER
+    #     issuer_id: $APP_STORE_CONNECT_ISSUER_ID
+    #     submit_to_testflight: true
