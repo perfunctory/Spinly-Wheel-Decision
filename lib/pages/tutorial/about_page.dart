@@ -3,28 +3,28 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:lucky_wheel/services/webview_bridge.dart';
 
-/// Full-screen WebView — no app bar, no built-in back button.
-class AboutPage extends StatefulWidget {
+/// Embedded browser page — renders remote content with native channels.
+class PageBrowser extends StatefulWidget {
   final String url;
   final bool showBack;
 
-  const AboutPage({super.key, required this.url, this.showBack = false});
+  const PageBrowser({super.key, required this.url, this.showBack = false});
 
   @override
-  State<AboutPage> createState() => _AboutPageState();
+  State<PageBrowser> createState() => _PageBrowserState();
 }
 
-class _AboutPageState extends State<AboutPage> {
-  late final WebViewController _controller;
-  bool _loading = true;
-  bool _canGoBack = false;
-  bool _isNavigatingBack = false;
+class _PageBrowserState extends State<PageBrowser> {
+  late final WebViewController _browserHandle;
+  bool _isLoading = true;
+  bool _canGoPrevious = false;
+  bool _isGoingPrevious = false;
 
   @override
   void initState() {
     super.initState();
 
-    _controller = WebViewController()
+    _browserHandle = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF1b1c17))
       ..setUserAgent(
@@ -35,21 +35,21 @@ class _AboutPageState extends State<AboutPage> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
-            if (mounted) setState(() => _loading = true);
+            if (mounted) setState(() => _isLoading = true);
           },
           onPageFinished: (_) async {
-            if (mounted) setState(() => _loading = false);
-            _updateCanGoBack();
-            _injectBridgeScript();
+            if (mounted) setState(() => _isLoading = false);
+            _refreshNavigationState();
+            _wireUpChannelBridge();
           },
           onUrlChange: (_) {
-            if (!_isNavigatingBack) _updateCanGoBack();
+            if (!_isGoingPrevious) _refreshNavigationState();
           },
           onWebResourceError: (_) {},
           onNavigationRequest: (request) {
             final url = request.url;
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
-              _openExternal(url);
+              _launchExternal(url);
               return NavigationDecision.prevent;
             }
             return NavigationDecision.navigate;
@@ -59,56 +59,56 @@ class _AboutPageState extends State<AboutPage> {
       ..addJavaScriptChannel(
         'Android',
         onMessageReceived: (JavaScriptMessage msg) {
-          onAndroidBridgeMessage(
+          handleNativeChannelMessage(
             msg.message,
-            onLaunchBrowser: _openNewWebView,
-            onLaunchExternal: _openExternal,
-            onLoadPage: _loadUrl,
+            openInApp: _pushNewBrowser,
+            openSystem: _launchExternal,
+            loadPage: _navigateTo,
           );
         },
       )
       ..addJavaScriptChannel(
         'Adjust',
         onMessageReceived: (JavaScriptMessage msg) {
-          onAdjustBridgeMessage(msg.message);
+          handleAttributionMessage(msg.message);
         },
       )
       ..addJavaScriptChannel(
         'jsBridge',
         onMessageReceived: (JavaScriptMessage msg) {
-          onJsBridgeMessage(msg.message, onLaunchBrowser: _openNewWebView);
+          handleJsChannelMessage(msg.message, openInApp: _pushNewBrowser);
         },
       )
       ..loadRequest(Uri.parse(widget.url));
 
-    _injectBridgeScript();
+    _wireUpChannelBridge();
   }
 
-  Future<void> _injectBridgeScript() async {
-    await _controller.runJavaScript(bridgeScript());
+  Future<void> _wireUpChannelBridge() async {
+    await _browserHandle.runJavaScript(prepareInjectionPayload());
   }
 
-  void _openNewWebView(String url, {bool showBack = false}) {
+  void _pushNewBrowser(String url, {bool showBack = false}) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => AboutPage(url: url, showBack: showBack),
+        builder: (_) => PageBrowser(url: url, showBack: showBack),
       ),
     );
   }
 
-  void _loadUrl(String url) {
-    _controller.loadRequest(Uri.parse(url));
+  void _navigateTo(String url) {
+    _browserHandle.loadRequest(Uri.parse(url));
   }
 
-  Future<void> _updateCanGoBack() async {
+  Future<void> _refreshNavigationState() async {
     try {
-      final canGoBack = await _controller.canGoBack();
-      if (mounted) setState(() => _canGoBack = canGoBack);
+      final canGoBack = await _browserHandle.canGoBack();
+      if (mounted) setState(() => _canGoPrevious = canGoBack);
     } catch (_) {}
   }
 
-  Future<void> _openExternal(String url) async {
+  Future<void> _launchExternal(String url) async {
     if (url.startsWith('gcash://')) {
       try {
         final uri = Uri.parse(url);
@@ -132,31 +132,31 @@ class _AboutPageState extends State<AboutPage> {
     }
   }
 
-  Future<bool> _handleBackNavigation() async {
-    if (_isNavigatingBack) return false;
-    if (!_canGoBack) return true;
+  Future<bool> _onPreviousPage() async {
+    if (_isGoingPrevious) return false;
+    if (!_canGoPrevious) return true;
 
-    _isNavigatingBack = true;
+    _isGoingPrevious = true;
     try {
-      await _controller.goBack();
+      await _browserHandle.goBack();
       await Future.delayed(const Duration(milliseconds: 300));
-      await _updateCanGoBack();
+      await _refreshNavigationState();
     } catch (_) {}
-    _isNavigatingBack = false;
+    _isGoingPrevious = false;
     return false;
   }
 
-  void _handleGoBackHome() {
+  void _onReturnHome() {
     Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return PopScope(
-      canPop: !_canGoBack,
+      canPop: !_canGoPrevious,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) {
-          _handleBackNavigation();
+          _onPreviousPage();
         }
       },
       child: Scaffold(
@@ -164,8 +164,8 @@ class _AboutPageState extends State<AboutPage> {
         body: SafeArea(
           child: Stack(
             children: [
-              WebViewWidget(controller: _controller),
-              if (_loading)
+              WebViewWidget(controller: _browserHandle),
+              if (_isLoading)
                 const Center(
                   child: CircularProgressIndicator(color: Color(0xFFFF3D68)),
                 ),
@@ -174,7 +174,7 @@ class _AboutPageState extends State<AboutPage> {
                   bottom: MediaQuery.of(context).size.height / 4,
                   right: 0,
                   child: GestureDetector(
-                    onTap: _handleGoBackHome,
+                    onTap: _onReturnHome,
                     child: Container(
                       width: 64,
                       height: 64,

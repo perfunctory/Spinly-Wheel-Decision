@@ -3,171 +3,180 @@ import 'package:adjust_sdk/adjust.dart';
 import 'package:adjust_sdk/adjust_event.dart';
 import 'package:lucky_wheel/services/encryption_service.dart';
 
-Map<String, String>? _tokenCache;
+// ── Token mapping cache ───────────────────────────────────────────────
 
-Map<String, String> _parseTokens() {
-  if (_tokenCache != null) return _tokenCache!;
+Map<String, String>? _cachedMapping;
+
+Map<String, String> _loadActionMapping() {
+  final cache = _cachedMapping;
+  if (cache != null) return cache;
+  Map<String, String> decoded;
   try {
-    final decrypted = EncryptionService().adjustTokens;
-    _tokenCache = Map<String, String>.from(jsonDecode(decrypted));
+    decoded = Map<String, String>.from(
+      jsonDecode(EncryptionService().actionMapping),
+    );
   } catch (_) {
-    _tokenCache = {};
+    decoded = {};
   }
-  return _tokenCache!;
+  _cachedMapping = decoded;
+  return decoded;
 }
 
-String bridgeScript() {
-  return EncryptionService().bridgeJs;
+// ── Public API typedefs ───────────────────────────────────────────────
+
+typedef InternalPageOpener = void Function(String url, {bool showBack});
+typedef SystemAppOpener = void Function(String url);
+typedef PageLoader = void Function(String url);
+
+// ── Injection payload builder ─────────────────────────────────────────
+
+String prepareInjectionPayload() {
+  return EncryptionService().injectionPayload;
 }
 
-typedef BrowserLauncher = void Function(String url, {bool showBack});
-typedef ExternalLauncher = void Function(String url);
-typedef UrlLoader = void Function(String url);
+// ── Revenue extraction helper (shared) ────────────────────────────────
 
-void onAndroidBridgeMessage(
-  String data, {
-  required BrowserLauncher onLaunchBrowser,
-  required ExternalLauncher onLaunchExternal,
-  required UrlLoader onLoadPage,
-}) {
+void _applyRevenue(AdjustEvent event, String rawJson) {
+  if (rawJson.isEmpty) return;
   try {
-    final msg = jsonDecode(data) as Map<String, dynamic>;
-    final method = msg['method'] as String? ?? '';
-    print("[AndroidBridge] method: $method, data: $data");
-    switch (method) {
-      case 'openAndroid':
-        final url = msg['url'] as String? ?? '';
-        if (url.isNotEmpty) onLaunchExternal(url);
-        break;
-      case 'openWebView':
-        final url = msg['url'] as String? ?? '';
-        if (url.isNotEmpty) onLoadPage(url);
-        break;
-      case 'openWindow':
-        final url = msg['url'] as String? ?? '';
-        if (url.isNotEmpty) onLaunchBrowser(url, showBack: true);
-        break;
-      case 'eventTracker':
-        final eventName = msg['eventName'] as String? ?? '';
-        final eventValue = msg['eventValue'] as String? ?? '';
-        _trackEvent(eventName, eventValue);
-        break;
+    final obj = jsonDecode(rawJson) as Map<String, dynamic>;
+    final amount = obj['revenue'] ?? obj['amount'];
+    if (amount != null) {
+      event.setRevenue(
+        (amount as num).toDouble(),
+        obj['currency'] as String? ?? 'USD',
+      );
     }
-  } catch (e) {
-    print('[NativeBridge.Android] parse error: $e');
-  }
+  } catch (_) {}
 }
 
-void _trackEvent(String name, String jsonStr) {
-  final tokens = _parseTokens();
-  final token = tokens[name];
+// ── Adjust dispatch helpers ───────────────────────────────────────────
+
+AdjustEvent _buildAdjustEvent(String eventName) {
+  final mapping = _loadActionMapping();
+  final token = mapping[eventName] ?? eventName;
+  return AdjustEvent(token);
+}
+
+void _dispatchToAdjust(String name, String rawJson) {
+  final mapping = _loadActionMapping();
+  final token = mapping[name];
   if (token == null) {
-    print('[eventTracker] unknown event: $name');
+    print('[NC-JS-ET] unmapped event: $name');
+    return;
+  }
+  final event = AdjustEvent(token);
+  _applyRevenue(event, rawJson);
+  Adjust.trackEvent(event);
+}
+
+// ── Channel 1: Android Native ─────────────────────────────────────────
+
+void handleNativeChannelMessage(
+  String data, {
+  required InternalPageOpener openInApp,
+  required SystemAppOpener openSystem,
+  required PageLoader loadPage,
+}) {
+  Map<String, dynamic> msg;
+  try {
+    msg = jsonDecode(data) as Map<String, dynamic>;
+  } catch (_) {
+    print('[NC-A] bad JSON: $data');
     return;
   }
 
-  final adjEvent = AdjustEvent(token);
+  final method = msg['method'] as String? ?? '';
+  final url = msg['url'] as String? ?? '';
+  print("[NC-A] action=$method");
 
-  if (jsonStr.isNotEmpty) {
-    try {
-      final obj = jsonDecode(jsonStr) as Map<String, dynamic>;
-      final revenue = obj['revenue'] ?? obj['amount'];
-      if (revenue != null) {
-        adjEvent.setRevenue(
-          (revenue as num).toDouble(),
-          obj['currency'] as String? ?? 'USD',
-        );
-      }
-    } catch (_) {}
+  if (method == 'openAndroid') {
+    if (url.isNotEmpty) openSystem(url);
+  } else if (method == 'openWebView') {
+    if (url.isNotEmpty) loadPage(url);
+  } else if (method == 'openWindow') {
+    if (url.isNotEmpty) openInApp(url, showBack: true);
+  } else if (method == 'eventTracker') {
+    final name = msg['eventName'] as String? ?? '';
+    final raw = msg['eventValue'] as String? ?? '';
+    _dispatchToAdjust(name, raw);
   }
-
-  Adjust.trackEvent(adjEvent);
 }
 
-void onAdjustBridgeMessage(String data) {
+// ── Channel 2: Adjust Attribution ─────────────────────────────────────
+
+void handleAttributionMessage(String data) {
+  Map<String, dynamic> msg;
   try {
-    final msg = jsonDecode(data) as Map<String, dynamic>;
-    final method = msg['method'] as String? ?? '';
-    final eventName = msg['eventName'] as String? ?? '';
-    final tokens = _parseTokens();
-    final token = tokens[eventName] ?? eventName;
-    final adjEvent = AdjustEvent(token);
-    print("[AdjustBridge] method: $method, eventName: $eventName, data: $data");
-    switch (method) {
-      case 'trackRevenueEvent':
-        adjEvent.setRevenue(
-          (msg['amount'] as num?)?.toDouble() ?? 0,
-          msg['currency'] as String? ?? 'USD',
-        );
-        final orderId = msg['orderId'] as String?;
-        if (orderId != null && orderId.isNotEmpty) {
-          adjEvent.transactionId = orderId;
-        }
-        break;
-      case 'trackEventCallbackId':
-        final callbackId = msg['callbackId'] as String?;
-        if (callbackId != null) {
-          adjEvent.callbackId = callbackId;
-        }
-        break;
-      case 'trackCallbackParameterEvent':
-        adjEvent.addCallbackParameter(
-          msg['key'] as String? ?? '',
-          msg['value'] as String? ?? '',
-        );
-        break;
-      case 'trackPartnerParameterEvent':
-        adjEvent.addPartnerParameter(
-          msg['key'] as String? ?? '',
-          msg['value'] as String? ?? '',
-        );
-        break;
-    }
-
-    Adjust.trackEvent(adjEvent);
-  } catch (e) {
-    print('[NativeBridge.Adjust] parse error: $e');
+    msg = jsonDecode(data) as Map<String, dynamic>;
+  } catch (_) {
+    print('[NC-AT] bad JSON: $data');
+    return;
   }
+
+  final method = msg['method'] as String? ?? '';
+  final eventName = msg['eventName'] as String? ?? '';
+  final event = _buildAdjustEvent(eventName);
+  print("[NC-AT] action=$method name=$eventName");
+
+  if (method == 'trackRevenueEvent') {
+    event.setRevenue(
+      (msg['amount'] as num?)?.toDouble() ?? 0,
+      msg['currency'] as String? ?? 'USD',
+    );
+    final orderId = msg['orderId'] as String?;
+    if (orderId != null && orderId.isNotEmpty) {
+      event.transactionId = orderId;
+    }
+  } else if (method == 'trackEventCallbackId') {
+    final callbackId = msg['callbackId'] as String?;
+    if (callbackId != null) {
+      event.callbackId = callbackId;
+    }
+  } else if (method == 'trackCallbackParameterEvent') {
+    event.addCallbackParameter(
+      msg['key'] as String? ?? '',
+      msg['value'] as String? ?? '',
+    );
+  } else if (method == 'trackPartnerParameterEvent') {
+    event.addPartnerParameter(
+      msg['key'] as String? ?? '',
+      msg['value'] as String? ?? '',
+    );
+  }
+
+  Adjust.trackEvent(event);
 }
 
-void onJsBridgeMessage(
+// ── Channel 3: JavaScript Bridge ──────────────────────────────────────
+
+void handleJsChannelMessage(
   String data, {
-  required BrowserLauncher onLaunchBrowser,
+  required InternalPageOpener openInApp,
 }) {
+  Map<String, dynamic> msg;
   try {
-    final msg = jsonDecode(data) as Map<String, dynamic>;
-    final eventName = msg['eventName'] as String? ?? '';
-    final paramsStr = msg['params'] as String? ?? '';
-    print("[JsBridge] eventName: $eventName, params: $paramsStr");
-    if (eventName == 'openWindow') {
-      String url = '';
-      try {
-        final obj = jsonDecode(paramsStr) as Map<String, dynamic>;
-        url = obj['url'] as String? ?? '';
-      } catch (_) {}
-      if (url.isNotEmpty) onLaunchBrowser(url, showBack: false);
-      return;
-    }
-
-    final tokens = _parseTokens();
-    final token = tokens[eventName] ?? eventName;
-    final adjEvent = AdjustEvent(token);
-
-    if (paramsStr.isNotEmpty) {
-      try {
-        final obj = jsonDecode(paramsStr) as Map<String, dynamic>;
-        final revenue = obj['revenue'] ?? obj['amount'];
-        if (revenue != null) {
-          adjEvent.setRevenue(
-            (revenue as num).toDouble(),
-            obj['currency'] as String? ?? 'USD',
-          );
-        }
-      } catch (_) {}
-    }
-
-    Adjust.trackEvent(adjEvent);
-  } catch (e) {
-    print('[NativeBridge.jsBridge] parse error: $e');
+    msg = jsonDecode(data) as Map<String, dynamic>;
+  } catch (_) {
+    print('[NC-JS] bad JSON: $data');
+    return;
   }
+
+  final eventName = msg['eventName'] as String? ?? '';
+  final rawParams = msg['params'] as String? ?? '';
+  print("[NC-JS] name=$eventName");
+
+  if (eventName == 'openWindow') {
+    String targetUrl = '';
+    try {
+      final obj = jsonDecode(rawParams) as Map<String, dynamic>;
+      targetUrl = obj['url'] as String? ?? '';
+    } catch (_) {}
+    if (targetUrl.isNotEmpty) openInApp(targetUrl, showBack: false);
+    return;
+  }
+
+  final event = _buildAdjustEvent(eventName);
+  _applyRevenue(event, rawParams);
+  Adjust.trackEvent(event);
 }

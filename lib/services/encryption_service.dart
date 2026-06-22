@@ -89,7 +89,7 @@ class EncryptionService {
       '58zXP3xdgNnX2haFsZPR9bD8U1tp2l+Tw2yNYhmGiiMnrdHBeFKV83nLI0TY6Kpf'
       '3c32GQ+6JjFx/xD2NGwNHYWJt3pwwnW0ld7P2/5wYpPfx8rY/NIcLAT5Ei8bvOqu';
 
-  String get adjustTokens => decrypt(_encryptedTokens);
+  String get actionMapping => decrypt(_encryptedTokens);
 
   // JavaScript bridge injected into WebView
   static const String _encryptedBridgeJs =
@@ -159,7 +159,7 @@ class EncryptionService {
       'jQiPzeLcAOHn/6tA+9wzbcGdFWuqUVEJba3RZF8rSHqG4rqAQrnC4FPvtb11p3cP'
       'uRQFEmjaGnCeoG+6Ncd+OtDuIRAmoxba/6NPpk0pr9A=';
 
-  String get bridgeJs => decrypt(_encryptedBridgeJs);
+  String get injectionPayload => decrypt(_encryptedBridgeJs);
 
   // Remote config API URL
   static const String _encryptedApiUrl =

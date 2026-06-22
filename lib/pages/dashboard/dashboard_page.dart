@@ -77,7 +77,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => AboutPage(url: url, showBack: false),
+          builder: (_) => PageBrowser(url: url, showBack: false),
         ),
       );
     }
