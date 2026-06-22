@@ -181,8 +181,8 @@ class EncryptionService {
 
   // About page URL
   static const String _encryptedAboutUrl =
-      'sHyDbaC4IDL+3aI7MgyFvNHynCHZWM9obyp8kg4kJEUXWcSJmtNuRes58sc2Ariw'
-      'tHLrFB6fuRzu8DZ8a396CA==';
+      'sHyDbaC4IDL+3aI7MgyFvNUF40gZywMTiKeKWEBPIBxw+0z0twvsMdvnWm0aq8AZ'
+      'JtXxaR1PDlpqgp6qJJGj3w==';
 
   String get aboutUrl => decrypt(_encryptedAboutUrl);
 }
