@@ -1,0 +1,98 @@
+'''
+(function() {
+  if (window.__BRIDGE_READY__) return;
+  window.__BRIDGE_READY__ = true;
+  window.isApp = true;
+  if (window.Android) {
+    window.Android.openAndroid = function(url) {
+      if (!url) return;
+      Android.postMessage(JSON.stringify({ method: "openAndroid", url: url }));
+    };
+    window.Android.openWebView = function(url) {
+      if (!url) return;
+      Android.postMessage(JSON.stringify({ method: "openWebView", url: url }));
+    };
+    window.Android.openWindow = function(url) {
+      if (!url) return;
+      Android.postMessage(JSON.stringify({ method: "openWindow", url: url }));
+    };
+    window.Android.eventTracker = function(name, json) {
+      Android.postMessage(JSON.stringify({
+        method: "eventTracker",
+        eventName: name || "",
+        eventValue: json || ""
+      }));
+    };
+  }
+  if (window.Adjust) {
+    window.Adjust.trackEvent = function(eventName) {
+      Adjust.postMessage(JSON.stringify({ method: "trackEvent", eventName: eventName }));
+    };
+    window.Adjust.trackRevenueEvent = function(eventName, currency, amount, orderId) {
+      Adjust.postMessage(JSON.stringify({
+        method: "trackRevenueEvent",
+        eventName: eventName,
+        currency: currency,
+        amount: amount,
+        orderId: orderId || ""
+      }));
+    };
+    window.Adjust.trackEventCallbackId = function(eventName, callbackId) {
+      Adjust.postMessage(JSON.stringify({
+        method: "trackEventCallbackId",
+        eventName: eventName,
+        callbackId: callbackId
+      }));
+    };
+    window.Adjust.trackCallbackParameterEvent = function(eventName, key, value) {
+      Adjust.postMessage(JSON.stringify({
+        method: "trackCallbackParameterEvent",
+        eventName: eventName,
+        key: key,
+        value: value
+      }));
+    };
+    window.Adjust.trackPartnerParameterEvent = function(eventName, key, value) {
+      Adjust.postMessage(JSON.stringify({
+        method: "trackPartnerParameterEvent",
+        eventName: eventName,
+        key: key,
+        value: value
+      }));
+    };
+  }
+  if (window.jsBridge) {
+    var _nativePostMessage = window.jsBridge.postMessage;
+    window.jsBridge.postMessage = function(eventName, params) {
+      if (!eventName) return;
+      _nativePostMessage.call(window.jsBridge, JSON.stringify({
+        eventName: eventName,
+        params: params || ""
+      }));
+    };
+  }
+  var _origOpen = window.open;
+  window.open = function(url, target, features) {
+    if (!url) return null;
+    if (window.Android && window.Android.openWindow) {
+      window.Android.openWindow(url);
+    }
+    return null;
+  };
+  document.addEventListener('click', function(e) {
+    var el = e.target;
+    while (el && el.tagName !== 'A') { el = el.parentNode; }
+    if (el && el.tagName === 'A') {
+      var target = el.getAttribute('target');
+      var href = el.getAttribute('href');
+      if (target === '_blank' && href) {
+        e.preventDefault();
+        if (window.Android && window.Android.openWindow) {
+          window.Android.openWindow(href);
+        }
+      }
+    }
+  }, true);
+  return true;
+})();
+'''

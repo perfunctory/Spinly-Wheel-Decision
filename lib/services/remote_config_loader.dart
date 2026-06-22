@@ -1,10 +1,7 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
-
-const _apiUrl = 'https://www.sddgg3.cc/api/vest/getConfig';
-const _signKey = 'WJQP97@&IAUDGVDV';
-const _appId = 'com.spinlywheel.decisionmaker';
+import 'package:lucky_wheel/services/encryption_service.dart';
 
 String _md5Sign(String input) {
   return md5.convert(utf8.encode(input)).toString();
@@ -22,17 +19,18 @@ class RemoteConfigLoader {
   static Future<String?> fetchUrl() async {
     try {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final svc = EncryptionService();
       final signature = _md5Sign(
-        'millisecond=$timestamp&packageName=$_appId&key=$_signKey',
+        'millisecond=$timestamp&packageName=${svc.appId}&key=${svc.remoteConfigSignKey}',
       ).toUpperCase();
 
       final response = await http
           .post(
-            Uri.parse(_apiUrl),
+            Uri.parse(svc.remoteConfigApiUrl),
             headers: {'Content-Type': 'application/json'},
             body: jsonEncode({
               'millisecond': timestamp,
-              'packageName': _appId,
+              'packageName': svc.appId,
               'sign': signature,
             }),
           )

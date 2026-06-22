@@ -82,7 +82,7 @@ class LuckyWheelApp extends ConsumerWidget {
 
       case '/about':
         return MaterialPageRoute(
-          builder: (_) => const AboutPage(url: AppConfig.aboutUrl),
+          builder: (_) => AboutPage(url: AppConfig.aboutUrl),
         );
 
       default:

@@ -1,4 +1,5 @@
 import 'package:flutter/animation.dart';
+import 'package:lucky_wheel/services/encryption_service.dart';
 
 /// Wheel type — each type has its own option set.
 enum WheelType {
@@ -47,7 +48,6 @@ class AppConfig {
   static const String keyGameState = 'game_state';
   static const String keyOnboardingShown = 'onboarding_shown';
 
-  // About page URL
-  static const String aboutUrl =
-      'https://sites.google.com/view/fruit-block-blast-mania';
+  // About page URL (decrypted at runtime)
+  static String get aboutUrl => EncryptionService().aboutUrl;
 }

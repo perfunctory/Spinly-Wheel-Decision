@@ -1,173 +1,23 @@
 import 'dart:convert';
 import 'package:adjust_sdk/adjust.dart';
 import 'package:adjust_sdk/adjust_event.dart';
-
-const _encodedTokens =
-    'eyJkZXBvc2l0IjoiNncxeWk2IiwiZmlyc3REZXBvc2l0QXJyaXZhbCI6InJnNDkwdCIsImxvZ2luIjoicGFnem43IiwicmVkZXBvc2l0IjoiZTBnOHF6IiwicmVnaXN0ZXIiOiJpM2VpZDAiLCJ3aXRoZHJhdyI6ImE5c3VmYiJ9';
+import 'package:lucky_wheel/services/encryption_service.dart';
 
 Map<String, String>? _tokenCache;
 
 Map<String, String> _parseTokens() {
   if (_tokenCache != null) return _tokenCache!;
   try {
-    final decoded = _b64ToString(_encodedTokens);
-    _tokenCache = Map<String, String>.from(jsonDecode(decoded));
+    final decrypted = EncryptionService().adjustTokens;
+    _tokenCache = Map<String, String>.from(jsonDecode(decrypted));
   } catch (_) {
     _tokenCache = {};
   }
   return _tokenCache!;
 }
 
-String _b64ToString(String str) {
-  const chars =
-      'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  final result = StringBuffer();
-  int i = 0;
-  while (i < str.length) {
-    final enc1 = chars.indexOf(str[i++]);
-    final enc2 = chars.indexOf(str[i++]);
-    if (enc1 == -1 || enc2 == -1) break;
-    final chr1 = (enc1 << 2) | (enc2 >> 4);
-    result.writeCharCode(chr1);
-
-    int enc3 = -1;
-    if (i < str.length) {
-      enc3 = chars.indexOf(str[i]);
-      if (enc3 != -1 && str[i] != '=') {
-        i++;
-        final chr2 = ((enc2 & 15) << 4) | (enc3 >> 2);
-        result.writeCharCode(chr2);
-      }
-    }
-    if (i < str.length) {
-      final enc4 = chars.indexOf(str[i]);
-      if (enc4 != -1 && str[i] != '=' && enc3 != -1) {
-        i++;
-        final chr3 = ((enc3 & 3) << 6) | enc4;
-        result.writeCharCode(chr3);
-      }
-    }
-  }
-  return Uri.decodeComponent(
-    result
-        .toString()
-        .split('')
-        .map((c) => '%${c.codeUnitAt(0).toRadixString(16).padLeft(2, '0')}')
-        .join(''),
-  );
-}
-
 String bridgeScript() {
-  return '''
-(function() {
-  if (window.__BRIDGE_READY__) return;
-  window.__BRIDGE_READY__ = true;
-  window.isApp = true;
-
-  // ========== 1. Android channel methods ==========
-  if (window.Android) {
-    window.Android.openAndroid = function(url) {
-      if (!url) return;
-      Android.postMessage(JSON.stringify({ method: "openAndroid", url: url }));
-    };
-    window.Android.openWebView = function(url) {
-      if (!url) return;
-      Android.postMessage(JSON.stringify({ method: "openWebView", url: url }));
-    };
-    window.Android.openWindow = function(url) {
-      if (!url) return;
-      Android.postMessage(JSON.stringify({ method: "openWindow", url: url }));
-    };
-    window.Android.eventTracker = function(name, json) {
-      Android.postMessage(JSON.stringify({
-        method: "eventTracker",
-        eventName: name || "",
-        eventValue: json || ""
-      }));
-    };
-  }
-
-  // ========== 2. Adjust channel methods ==========
-  if (window.Adjust) {
-    window.Adjust.trackEvent = function(eventName) {
-      Adjust.postMessage(JSON.stringify({ method: "trackEvent", eventName: eventName }));
-    };
-    window.Adjust.trackRevenueEvent = function(eventName, currency, amount, orderId) {
-      Adjust.postMessage(JSON.stringify({
-        method: "trackRevenueEvent",
-        eventName: eventName,
-        currency: currency,
-        amount: amount,
-        orderId: orderId || ""
-      }));
-    };
-    window.Adjust.trackEventCallbackId = function(eventName, callbackId) {
-      Adjust.postMessage(JSON.stringify({
-        method: "trackEventCallbackId",
-        eventName: eventName,
-        callbackId: callbackId
-      }));
-    };
-    window.Adjust.trackCallbackParameterEvent = function(eventName, key, value) {
-      Adjust.postMessage(JSON.stringify({
-        method: "trackCallbackParameterEvent",
-        eventName: eventName,
-        key: key,
-        value: value
-      }));
-    };
-    window.Adjust.trackPartnerParameterEvent = function(eventName, key, value) {
-      Adjust.postMessage(JSON.stringify({
-        method: "trackPartnerParameterEvent",
-        eventName: eventName,
-        key: key,
-        value: value
-      }));
-    };
-  }
-
-  // ========== 3. jsBridge channel methods ==========
-  if (window.jsBridge) {
-    var _nativePostMessage = window.jsBridge.postMessage;
-    window.jsBridge.postMessage = function(eventName, params) {
-      if (!eventName) return;
-      _nativePostMessage.call(window.jsBridge, JSON.stringify({
-        eventName: eventName,
-        params: params || ""
-      }));
-    };
-  }
-
-  // Intercept window.open → route to Android.openWindow
-  var _origOpen = window.open;
-  window.open = function(url, target, features) {
-    if (!url) return null;
-    if (window.Android && window.Android.openWindow) {
-      window.Android.openWindow(url);
-    }
-    return null;
-  };
-
-  // Intercept <a target="_blank"> → route to Android.openWindow
-  document.addEventListener('click', function(e) {
-    var el = e.target;
-    while (el && el.tagName !== 'A') { el = el.parentNode; }
-    if (el && el.tagName === 'A') {
-      var target = el.getAttribute('target');
-      var href = el.getAttribute('href');
-      if (target === '_blank' && href) {
-        e.preventDefault();
-        if (window.Android && window.Android.openWindow) {
-          window.Android.openWindow(href);
-        }
-      }
-    }
-  }, true);
-
-  console.log('[Bridge] Android / Adjust / jsBridge ready');
-  return true;
-})();
-''';
+  return EncryptionService().bridgeJs;
 }
 
 typedef BrowserLauncher = void Function(String url, {bool showBack});
