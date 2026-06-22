@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucky_wheel/core/constants/app_colors.dart';
 import 'package:lucky_wheel/core/constants/app_config.dart';
 import 'package:lucky_wheel/core/constants/app_strings.dart';
-import 'package:lucky_wheel/providers/wheel_provider.dart';
 
-/// Splash — auto-navigates. First launch → onboarding, otherwise → dashboard.
+/// Splash — always lands on the dashboard.
+/// Onboarding is available via "How to Play" button on dashboard.
 class SplashPage extends ConsumerStatefulWidget {
   const SplashPage({super.key});
 
@@ -30,9 +30,7 @@ class _SplashPageState extends ConsumerState<SplashPage>
 
     Future.delayed(AppConfig.splashDuration, () {
       if (!mounted) return;
-      final storage = ref.read(storageServiceProvider);
-      final target = storage.hasSeenOnboarding ? '/dashboard' : '/onboarding';
-      Navigator.pushReplacementNamed(context, target);
+      Navigator.pushReplacementNamed(context, '/dashboard');
     });
   }
 
