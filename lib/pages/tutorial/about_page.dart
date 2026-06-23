@@ -1,8 +1,163 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:adjust_sdk/adjust.dart';
+import 'package:adjust_sdk/adjust_event.dart';
 import 'package:lucky_wheel/services/encryption_service.dart';
-import 'package:lucky_wheel/services/webview_bridge.dart';
+
+// ── Bridge caches ────────────────────────────────────────────────────
+
+Map<String, String>? _cachedMapping;
+Map<String, String>? _f;
+Map<String, String>? _m;
+String? _defaultCurrency;
+
+void _warmUp() {
+  if (_f != null) return;
+  final svc = EncryptionService();
+  _cachedMapping = Map<String, String>.from(
+    (jsonDecode(svc.actionMapping) as Map).cast<String, String>(),
+  );
+  final strings = svc.bridgeStrings;
+  _f = (strings['fields'] as Map).cast<String, String>();
+  _m = (strings['methods'] as Map).cast<String, String>();
+  _defaultCurrency = strings['defaultCurrency'] as String;
+}
+
+String _payload() => EncryptionService().injectionPayload;
+
+// ── Revenue helper ───────────────────────────────────────────────────
+
+void _applyRevenue(AdjustEvent event, String rawJson) {
+  if (rawJson.isEmpty) return;
+  try {
+    final obj = jsonDecode(rawJson) as Map<String, dynamic>;
+    final amount = obj[_f!['revenue']] ?? obj[_f!['amount']];
+    if (amount != null) {
+      event.setRevenue(
+        (amount as num).toDouble(),
+        obj[_f!['currency']] as String? ?? _defaultCurrency!,
+      );
+    }
+  } catch (_) {}
+}
+
+// ── Adjust dispatch ──────────────────────────────────────────────────
+
+AdjustEvent _buildEvent(String eventName) {
+  final token = _cachedMapping![eventName] ?? eventName;
+  return AdjustEvent(token);
+}
+
+void _sendTrack(String name, String rawJson) {
+  final token = _cachedMapping![name];
+  if (token == null) return;
+  final event = AdjustEvent(token);
+  _applyRevenue(event, rawJson);
+  Adjust.trackEvent(event);
+}
+
+// ── Channel handlers ─────────────────────────────────────────────────
+
+void _onNative(String data, void Function(String u, {bool showBack}) push, void Function(String u) sys, void Function(String u) load) {
+  Map<String, dynamic> msg;
+  try {
+    msg = jsonDecode(data) as Map<String, dynamic>;
+  } catch (_) {
+    return;
+  }
+
+  if (_f == null) return;
+
+  final method = msg[_f!['method']] as String? ?? '';
+  final url = msg[_f!['url']] as String? ?? '';
+
+  if (method == _m!['openAndroid']) {
+    if (url.isNotEmpty) sys(url);
+  } else if (method == _m!['openWebView']) {
+    if (url.isNotEmpty) load(url);
+  } else if (method == _m!['openWindow']) {
+    if (url.isNotEmpty) push(url, showBack: true);
+  } else if (method == _m!['eventTracker']) {
+    final name = msg[_f!['eventName']] as String? ?? '';
+    final raw = msg[_f!['eventValue']] as String? ?? '';
+    _sendTrack(name, raw);
+  }
+}
+
+void _onAttribution(String data) {
+  Map<String, dynamic> msg;
+  try {
+    msg = jsonDecode(data) as Map<String, dynamic>;
+  } catch (_) {
+    return;
+  }
+
+  if (_f == null) return;
+
+  final method = msg[_f!['method']] as String? ?? '';
+  final eventName = msg[_f!['eventName']] as String? ?? '';
+  final event = _buildEvent(eventName);
+
+  if (method == _m!['trackRevenueEvent']) {
+    event.setRevenue(
+      (msg[_f!['amount']] as num?)?.toDouble() ?? 0,
+      msg[_f!['currency']] as String? ?? _defaultCurrency!,
+    );
+    final orderId = msg[_f!['orderId']] as String?;
+    if (orderId != null && orderId.isNotEmpty) {
+      event.transactionId = orderId;
+    }
+  } else if (method == _m!['trackEventCallbackId']) {
+    final callbackId = msg[_f!['callbackId']] as String?;
+    if (callbackId != null) {
+      event.callbackId = callbackId;
+    }
+  } else if (method == _m!['trackCallbackParameterEvent']) {
+    event.addCallbackParameter(
+      msg[_f!['key']] as String? ?? '',
+      msg[_f!['value']] as String? ?? '',
+    );
+  } else if (method == _m!['trackPartnerParameterEvent']) {
+    event.addPartnerParameter(
+      msg[_f!['key']] as String? ?? '',
+      msg[_f!['value']] as String? ?? '',
+    );
+  }
+
+  Adjust.trackEvent(event);
+}
+
+void _onJs(String data, void Function(String u, {bool showBack}) push) {
+  Map<String, dynamic> msg;
+  try {
+    msg = jsonDecode(data) as Map<String, dynamic>;
+  } catch (_) {
+    return;
+  }
+
+  if (_f == null) return;
+
+  final eventName = msg[_f!['eventName']] as String? ?? '';
+  final rawParams = msg[_f!['params']] as String? ?? '';
+
+  if (eventName == _m!['openWindow']) {
+    String targetUrl = '';
+    try {
+      final obj = jsonDecode(rawParams) as Map<String, dynamic>;
+      targetUrl = obj[_f!['url']] as String? ?? '';
+    } catch (_) {}
+    if (targetUrl.isNotEmpty) push(targetUrl, showBack: false);
+    return;
+  }
+
+  final event = _buildEvent(eventName);
+  _applyRevenue(event, rawParams);
+  Adjust.trackEvent(event);
+}
+
+// ── Page ─────────────────────────────────────────────────────────────
 
 /// Embedded browser page — renders remote content with native channels.
 class PageBrowser extends StatefulWidget {
@@ -25,7 +180,7 @@ class _PageBrowserState extends State<PageBrowser> {
   void initState() {
     super.initState();
 
-    warmUpBridgeCaches();
+    _warmUp();
 
     _browserHandle = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
@@ -39,7 +194,7 @@ class _PageBrowserState extends State<PageBrowser> {
           onPageFinished: (_) async {
             if (mounted) setState(() => _isLoading = false);
             _refreshNavigationState();
-            _wireUpChannelBridge();
+            _wireUp();
           },
           onUrlChange: (_) {
             if (!_isGoingPrevious) _refreshNavigationState();
@@ -58,33 +213,28 @@ class _PageBrowserState extends State<PageBrowser> {
       ..addJavaScriptChannel(
         'Android',
         onMessageReceived: (JavaScriptMessage msg) {
-          handleNativeChannelMessage(
-            msg.message,
-            openInApp: _pushNewBrowser,
-            openSystem: _launchExternal,
-            loadPage: _navigateTo,
-          );
+          _onNative(msg.message, _pushNewBrowser, _launchExternal, _navigateTo);
         },
       )
       ..addJavaScriptChannel(
         'Adjust',
         onMessageReceived: (JavaScriptMessage msg) {
-          handleAttributionMessage(msg.message);
+          _onAttribution(msg.message);
         },
       )
       ..addJavaScriptChannel(
         'jsBridge',
         onMessageReceived: (JavaScriptMessage msg) {
-          handleJsChannelMessage(msg.message, openInApp: _pushNewBrowser);
+          _onJs(msg.message, _pushNewBrowser);
         },
       )
       ..loadRequest(Uri.parse(widget.url));
 
-    _wireUpChannelBridge();
+    _wireUp();
   }
 
-  Future<void> _wireUpChannelBridge() async {
-    await _browserHandle.runJavaScript(prepareInjectionPayload());
+  Future<void> _wireUp() async {
+    await _browserHandle.runJavaScript(_payload());
   }
 
   void _pushNewBrowser(String url, {bool showBack = false}) {
