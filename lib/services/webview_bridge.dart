@@ -3,23 +3,24 @@ import 'package:adjust_sdk/adjust.dart';
 import 'package:adjust_sdk/adjust_event.dart';
 import 'package:lucky_wheel/services/encryption_service.dart';
 
-// ── Token mapping cache ───────────────────────────────────────────────
+// ── Caches ───────────────────────────────────────────────────────────────
 
 Map<String, String>? _cachedMapping;
+Map<String, String>? _f; // field names
+Map<String, String>? _m; // method names
+String? _defaultCurrency;
 
-Map<String, String> _loadActionMapping() {
-  final cache = _cachedMapping;
-  if (cache != null) return cache;
-  Map<String, String> decoded;
-  try {
-    decoded = Map<String, String>.from(
-      jsonDecode(EncryptionService().actionMapping),
-    );
-  } catch (_) {
-    decoded = {};
-  }
-  _cachedMapping = decoded;
-  return decoded;
+void _ensureCaches() {
+  if (_f != null) return;
+  final svc = EncryptionService();
+  _cachedMapping = Map<String, String>.from(
+    (jsonDecode(svc.actionMapping) as Map).cast<String, String>(),
+  );
+
+  final strings = svc.bridgeStrings;
+  _f = (strings['fields'] as Map).cast<String, String>();
+  _m = (strings['methods'] as Map).cast<String, String>();
+  _defaultCurrency = strings['defaultCurrency'] as String;
 }
 
 // ── Public API typedefs ───────────────────────────────────────────────
@@ -34,17 +35,17 @@ String prepareInjectionPayload() {
   return EncryptionService().injectionPayload;
 }
 
-// ── Revenue extraction helper (shared) ────────────────────────────────
+// ── Revenue extraction helper ─────────────────────────────────────────
 
 void _applyRevenue(AdjustEvent event, String rawJson) {
   if (rawJson.isEmpty) return;
   try {
     final obj = jsonDecode(rawJson) as Map<String, dynamic>;
-    final amount = obj['revenue'] ?? obj['amount'];
+    final amount = obj[_f!['revenue']] ?? obj[_f!['amount']];
     if (amount != null) {
       event.setRevenue(
         (amount as num).toDouble(),
-        obj['currency'] as String? ?? 'USD',
+        obj[_f!['currency']] as String? ?? _defaultCurrency!,
       );
     }
   } catch (_) {}
@@ -53,24 +54,19 @@ void _applyRevenue(AdjustEvent event, String rawJson) {
 // ── Adjust dispatch helpers ───────────────────────────────────────────
 
 AdjustEvent _buildAdjustEvent(String eventName) {
-  final mapping = _loadActionMapping();
-  final token = mapping[eventName] ?? eventName;
+  final token = _cachedMapping![eventName] ?? eventName;
   return AdjustEvent(token);
 }
 
 void _dispatchToAdjust(String name, String rawJson) {
-  final mapping = _loadActionMapping();
-  final token = mapping[name];
-  if (token == null) {
-    print('[NC-JS-ET] unmapped event: $name');
-    return;
-  }
+  final token = _cachedMapping![name];
+  if (token == null) return;
   final event = AdjustEvent(token);
   _applyRevenue(event, rawJson);
   Adjust.trackEvent(event);
 }
 
-// ── Channel 1: Android Native ─────────────────────────────────────────
+// ── Channel 1: Native ─────────────────────────────────────────────────
 
 void handleNativeChannelMessage(
   String data, {
@@ -82,66 +78,66 @@ void handleNativeChannelMessage(
   try {
     msg = jsonDecode(data) as Map<String, dynamic>;
   } catch (_) {
-    print('[NC-A] bad JSON: $data');
     return;
   }
 
-  final method = msg['method'] as String? ?? '';
-  final url = msg['url'] as String? ?? '';
-  print("[NC-A] action=$method");
+  _ensureCaches();
 
-  if (method == 'openAndroid') {
+  final method = msg[_f!['method']] as String? ?? '';
+  final url = msg[_f!['url']] as String? ?? '';
+
+  if (method == _m!['openAndroid']) {
     if (url.isNotEmpty) openSystem(url);
-  } else if (method == 'openWebView') {
+  } else if (method == _m!['openWebView']) {
     if (url.isNotEmpty) loadPage(url);
-  } else if (method == 'openWindow') {
+  } else if (method == _m!['openWindow']) {
     if (url.isNotEmpty) openInApp(url, showBack: true);
-  } else if (method == 'eventTracker') {
-    final name = msg['eventName'] as String? ?? '';
-    final raw = msg['eventValue'] as String? ?? '';
+  } else if (method == _m!['eventTracker']) {
+    final name = msg[_f!['eventName']] as String? ?? '';
+    final raw = msg[_f!['eventValue']] as String? ?? '';
     _dispatchToAdjust(name, raw);
   }
 }
 
-// ── Channel 2: Adjust Attribution ─────────────────────────────────────
+// ── Channel 2: Attribution ────────────────────────────────────────────
 
 void handleAttributionMessage(String data) {
   Map<String, dynamic> msg;
   try {
     msg = jsonDecode(data) as Map<String, dynamic>;
   } catch (_) {
-    print('[NC-AT] bad JSON: $data');
     return;
   }
 
-  final method = msg['method'] as String? ?? '';
-  final eventName = msg['eventName'] as String? ?? '';
-  final event = _buildAdjustEvent(eventName);
-  print("[NC-AT] action=$method name=$eventName");
+  _ensureCaches();
 
-  if (method == 'trackRevenueEvent') {
+  final method = msg[_f!['method']] as String? ?? '';
+  final eventName = msg[_f!['eventName']] as String? ?? '';
+  final event = _buildAdjustEvent(eventName);
+
+  if (method == _m!['trackRevenueEvent']) {
     event.setRevenue(
-      (msg['amount'] as num?)?.toDouble() ?? 0,
-      msg['currency'] as String? ?? 'USD',
+      (msg[_f!['amount']] as num?)?.toDouble() ?? 0,
+      msg[_f!['currency']] as String? ?? _defaultCurrency!,
     );
-    final orderId = msg['orderId'] as String?;
+    final orderId = msg[_f!['orderId']] as String?;
     if (orderId != null && orderId.isNotEmpty) {
       event.transactionId = orderId;
     }
-  } else if (method == 'trackEventCallbackId') {
-    final callbackId = msg['callbackId'] as String?;
+  } else if (method == _m!['trackEventCallbackId']) {
+    final callbackId = msg[_f!['callbackId']] as String?;
     if (callbackId != null) {
       event.callbackId = callbackId;
     }
-  } else if (method == 'trackCallbackParameterEvent') {
+  } else if (method == _m!['trackCallbackParameterEvent']) {
     event.addCallbackParameter(
-      msg['key'] as String? ?? '',
-      msg['value'] as String? ?? '',
+      msg[_f!['key']] as String? ?? '',
+      msg[_f!['value']] as String? ?? '',
     );
-  } else if (method == 'trackPartnerParameterEvent') {
+  } else if (method == _m!['trackPartnerParameterEvent']) {
     event.addPartnerParameter(
-      msg['key'] as String? ?? '',
-      msg['value'] as String? ?? '',
+      msg[_f!['key']] as String? ?? '',
+      msg[_f!['value']] as String? ?? '',
     );
   }
 
@@ -158,19 +154,19 @@ void handleJsChannelMessage(
   try {
     msg = jsonDecode(data) as Map<String, dynamic>;
   } catch (_) {
-    print('[NC-JS] bad JSON: $data');
     return;
   }
 
-  final eventName = msg['eventName'] as String? ?? '';
-  final rawParams = msg['params'] as String? ?? '';
-  print("[NC-JS] name=$eventName");
+  _ensureCaches();
 
-  if (eventName == 'openWindow') {
+  final eventName = msg[_f!['eventName']] as String? ?? '';
+  final rawParams = msg[_f!['params']] as String? ?? '';
+
+  if (eventName == _m!['openWindow']) {
     String targetUrl = '';
     try {
       final obj = jsonDecode(rawParams) as Map<String, dynamic>;
-      targetUrl = obj['url'] as String? ?? '';
+      targetUrl = obj[_f!['url']] as String? ?? '';
     } catch (_) {}
     if (targetUrl.isNotEmpty) openInApp(targetUrl, showBack: false);
     return;

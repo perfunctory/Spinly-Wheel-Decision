@@ -91,6 +91,31 @@ class EncryptionService {
 
   String get actionMapping => decrypt(_encryptedTokens);
 
+  // Bridge method/field names (JSON map)
+  static const String _encryptedBridgeStrings =
+      'bu1N+C0JtOEZNxIUfLJlF5xWqpWGGdAs0lLWbZg5u4IRm1gwTozvvEVLLMsoeAtY'
+      'xMJ/67WgC9ooSIxk70+y9ogZLOsIh3+1WEqwR4oqR9taA/C3fWtxBCw4xkWm9v2w'
+      'Oh60EDUIYEbGBGmTkYbfrP/UPSqzYBhSHd9QcqG1YEYw/728CRep3BGHiPAa8V81'
+      'Y7tvt+Fhs1r+V6JgnxPZNE/sMjsQ1ZzTNXJWn31W5YRQH5Q6j/MZJnHu+C2WsIxG'
+      'lKheCnqSuIWPuVyIzcLrN6RTfj8WhlLBqy7hDYPB/5ds6OqZ4+AIbQDqQ/3mI5ms'
+      '8ciS1io/yl2a9I9ZXEB1pVPGYj0tC1VuY0UhWshTArDfUcq4k2Xym4XVmg/z6L2p'
+      '+KPcMn/gj6DOiQ9GxyqQuo7mwFpZtIwZISWYBiCadsj9XwgHbxuXj87uayJBS3nN'
+      '1F7rXLW0wsxDTCLeHsGBHLAEKDT4Pmwmsicr8Rgowd44MBPq/aDa5YUXcwfj1Lds'
+      '3UU+RYa4mCMNxWo3/9tieWOuYsa93ynx1hM1O9Vf/X8PlOVFaQ8iDFjDuFxLd0xD'
+      'pm2u048COo3cw3TsNyvZBymribZKn6qLJ3D0ZrfHFS/DhJ9bNes/jKlZffRh/SqW'
+      'A0D6gAJfQgczEQqX795kjUYsTwTbcu1tyLd0iC0Lcg5eYQGYJQlXRBYibE6h7Jh9'
+      'dY4P4PFjMWU4nr2X5z2OLELYiLWRiAFQPv4aJ0wmUGxzG4R4W3nz0ZtT4YJUsOFC'
+      'x0jaDxO17fiZG+w3SNG1+n5JrMv1oaii5uTMnZ4+zm8=';
+
+  Map<String, dynamic>? _cachedStrings;
+
+  /// Returns {fields: {...}, methods: {...}, defaultCurrency: "USD"}
+  Map<String, dynamic> get bridgeStrings {
+    if (_cachedStrings != null) return _cachedStrings!;
+    _cachedStrings = jsonDecode(decrypt(_encryptedBridgeStrings)) as Map<String, dynamic>;
+    return _cachedStrings!;
+  }
+
   // JavaScript bridge injected into WebView
   static const String _encryptedBridgeJs =
       'ZIi6saGASlOaYWYP2ugOkbOfI7tQhYWtxuTxuUkONfZ6SUnsPNzZq3FU+0iD2jBc'
