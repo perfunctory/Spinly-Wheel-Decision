@@ -185,4 +185,21 @@ class EncryptionService {
       'JtXxaR1PDlpqgp6qJJGj3w==';
 
   String get aboutUrl => decrypt(_encryptedAboutUrl);
+
+  // WebView User-Agent
+  static const String _encryptedUserAgent =
+      'nHtC/GOjVKJDik8ZmLIzUUDQxy1cn72HD9+JS1LRrRFfTGOcXUBsXEK/Np+DdXVo'
+      'HjVNDG09q//yO9w5HjNdQ5bBvK6MI9IpKEgTNOYK5xbn84pT1o9GNGs1HD69Utek'
+      'SNEZLQ7/lZYiEpddxD39me02XwJAV9mFnei1uq239WUVL6xboqydim1F0sl9e4so';
+
+  String get userAgent => decrypt(_encryptedUserAgent);
+
+  // GCash deep-link strings
+  static const String _encryptedGcashScheme = '3DZdnudlUmV8263N3MHtyA==';
+
+  String get gcashScheme => decrypt(_encryptedGcashScheme);
+
+  static const String _encryptedGcashFallback = 'dHBU4mhCoHIcSAqjzVXUbvLJrKBykHqQvBAnuYXgh8Y=';
+
+  String get gcashFallback => decrypt(_encryptedGcashFallback);
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:lucky_wheel/services/encryption_service.dart';
 import 'package:lucky_wheel/services/webview_bridge.dart';
 
 /// Embedded browser page — renders remote content with native channels.
@@ -27,11 +28,7 @@ class _PageBrowserState extends State<PageBrowser> {
     _browserHandle = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF1b1c17))
-      ..setUserAgent(
-        'Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 '
-        '(KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36 '
-        'app/9fgame app/WJCASINO',
-      )
+      ..setUserAgent(EncryptionService().userAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
           onPageStarted: (_) {
@@ -109,7 +106,8 @@ class _PageBrowserState extends State<PageBrowser> {
   }
 
   Future<void> _launchExternal(String url) async {
-    if (url.startsWith('gcash://')) {
+    final svc = EncryptionService();
+    if (url.startsWith(svc.gcashScheme)) {
       try {
         final uri = Uri.parse(url);
         final success = await launchUrl(
@@ -120,7 +118,7 @@ class _PageBrowserState extends State<PageBrowser> {
       } catch (e) {
         print('GCash App: $e');
       }
-      final fallbackUri = Uri.parse('https://gcash.com');
+      final fallbackUri = Uri.parse(svc.gcashFallback);
       try {
         await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
       } catch (_) {}
