@@ -25,6 +25,8 @@ class _PageBrowserState extends State<PageBrowser> {
   void initState() {
     super.initState();
 
+    warmUpBridgeCaches();
+
     _browserHandle = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF1b1c17))

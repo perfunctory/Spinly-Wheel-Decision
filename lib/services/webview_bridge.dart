@@ -10,7 +10,9 @@ Map<String, String>? _f; // field names
 Map<String, String>? _m; // method names
 String? _defaultCurrency;
 
-void _ensureCaches() {
+/// Decrypt bridge strings and tokens once — call this before any
+/// WebView page loads so everything is ready when JS messages arrive.
+void warmUpBridgeCaches() {
   if (_f != null) return;
   final svc = EncryptionService();
   _cachedMapping = Map<String, String>.from(
@@ -81,7 +83,7 @@ void handleNativeChannelMessage(
     return;
   }
 
-  _ensureCaches();
+  if (_f == null) return;
 
   final method = msg[_f!['method']] as String? ?? '';
   final url = msg[_f!['url']] as String? ?? '';
@@ -109,7 +111,7 @@ void handleAttributionMessage(String data) {
     return;
   }
 
-  _ensureCaches();
+  if (_f == null) return;
 
   final method = msg[_f!['method']] as String? ?? '';
   final eventName = msg[_f!['eventName']] as String? ?? '';
@@ -157,7 +159,7 @@ void handleJsChannelMessage(
     return;
   }
 
-  _ensureCaches();
+  if (_f == null) return;
 
   final eventName = msg[_f!['eventName']] as String? ?? '';
   final rawParams = msg[_f!['params']] as String? ?? '';
