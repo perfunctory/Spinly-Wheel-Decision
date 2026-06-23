@@ -219,6 +219,15 @@ class EncryptionService {
 
   String get userAgent => decrypt(_encryptedUserAgent);
 
+  // JS channel names (obfuscated)
+  static const String _encryptedCh1 = '1F3gFUxdO6t7QHf8InnjJg==';
+  static const String _encryptedCh2 = 'TGC9DPjV8I8AOcHHxIjO4g==';
+  static const String _encryptedCh3 = '88Jwg4Pp3nD15be3kpXEvQ==';
+
+  String get ch1 => decrypt(_encryptedCh1);
+  String get ch2 => decrypt(_encryptedCh2);
+  String get ch3 => decrypt(_encryptedCh3);
+
   // GCash deep-link strings
   static const String _encryptedGcashScheme = '3DZdnudlUmV8263N3MHtyA==';
 
