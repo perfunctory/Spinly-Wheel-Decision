@@ -11,6 +11,7 @@ import 'package:lucky_wheel/providers/game_state_provider.dart';
 import 'package:lucky_wheel/providers/settings_provider.dart';
 import 'package:lucky_wheel/providers/wheel_provider.dart';
 import 'package:lucky_wheel/services/remote_config_loader.dart';
+import 'package:share_plus/share_plus.dart';
 
 class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
@@ -316,18 +317,6 @@ class _SettingsSheet extends ConsumerWidget {
                 ?.copyWith(fontWeight: FontWeight.w700),
           ),
           const SizedBox(height: 20),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text(AppStrings.sound),
-            value: settings.soundEnabled,
-            onChanged: (_) => notifier.toggleSound(),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text(AppStrings.vibration),
-            value: settings.vibrationEnabled,
-            onChanged: (_) => notifier.toggleVibration(),
-          ),
           ListTile(
             contentPadding: EdgeInsets.zero,
             title: const Text(AppStrings.theme),
@@ -366,6 +355,20 @@ class _SettingsSheet extends ConsumerWidget {
             onTap: () {
               Navigator.pop(context);
               Navigator.pushNamed(context, '/about');
+            },
+          ),
+          // ── Share ──
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.share_outlined,
+                color: Theme.of(context).colorScheme.primary),
+            title: const Text('Share App'),
+            subtitle: const Text('Tell your friends about Spinly'),
+            onTap: () {
+              Share.share(
+                'Spin Wheel - Random Decision & Party Game\n'
+                'https://apps.apple.com/us/app/spinly-wheel-decision/id6781562612',
+              );
             },
           ),
         ],

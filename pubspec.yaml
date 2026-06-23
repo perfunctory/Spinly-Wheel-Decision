@@ -17,6 +17,7 @@ dependencies:
   adjust_sdk: ^4.38.0
   crypto: ^3.0.6
   http: ^1.2.2
+  share_plus: ^10.1.4
   encrypt: ^5.0.3
   flutter_secure_storage: ^9.2.2
 
