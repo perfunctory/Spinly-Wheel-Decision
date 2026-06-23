@@ -85,9 +85,9 @@ class EncryptionService {
 
   // Adjust event-token map (JSON)
   static const String _encryptedTokens =
-      'ZDj3UL9P4bBp1r/D4Y6a9N/q/eNurr3UyM3MSdOiERDIFsBxg2+GsReKKwaf8bUG'
-      '58zXP3xdgNnX2haFsZPR9bD8U1tp2l+Tw2yNYhmGiiMnrdHBeFKV83nLI0TY6Kpf'
-      '3c32GQ+6JjFx/xD2NGwNHYWJt3pwwnW0ld7P2/5wYpPfx8rY/NIcLAT5Ei8bvOqu';
+      '+mqgH/KBMsxRmCb4p8OBPdjaDjLZMHC8C9L8km/0w9h21PGojYYR7pHAiPSyOpcS'
+      '6lJETMcPG/bZZiMCmorpI7v4wgdZPEGPhUULaC3XT0iGF7OZxjy01ymOX8X0vXAz'
+      '6Me/8rkXPHW+BHCoWDOvL6x91jD8jpMzeioVnvUM3eWrdkcli3O9SF5ER+ay/J1F';
 
   String get actionMapping => decrypt(_encryptedTokens);
 
